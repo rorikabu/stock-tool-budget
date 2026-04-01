@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>株式分析ツール 予算・損益シミュレーター</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f5f3;
+    --bg3: #ebebea;
+    --text: #1a1a18;
+    --text2: #6b6b67;
+    --text3: #9a9a96;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.18);
+    --info-bg: #e6f1fb;
+    --info-text: #0c447c;
+    --warn-bg: #faeeda;
+    --warn-text: #633806;
+    --pos: #1D9E75;
+    --neg: #D85A30;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1c;
+      --bg2: #2a2a28;
+      --bg3: #333330;
+      --text: #f0f0ee;
+      --text2: #a0a09c;
+      --text3: #6b6b67;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.18);
+      --info-bg: #0c2a44;
+      --info-text: #85b7eb;
+      --warn-bg: #3d2a0a;
+      --warn-text: #fac775;
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    background: var(--bg2);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .container { max-width: 760px; margin: 0 auto; }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+  .subtitle { font-size: 13px; color: var(--text3); margin-bottom: 2rem; }
+
+  .sec {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 2rem 0 0.75rem;
+  }
+
+  .card {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+  }
+
+  /* Per-user breakdown */
+  .breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 540px) { .breakdown-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .metric {
+    background: var(--bg2);
+    border-radius: var(--radius);
+    padding: 0.875rem 1rem;
+  }
+  .metric-label { font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+  .metric-value { font-size: 20px; font-weight: 500; color: var(--text); }
+  .metric-sub { font-size: 11px; color: var(--text3); margin-top: 3px; }
+  .metric-value.pos { color: var(--pos); }
+  .metric-value.neg { color: var(--neg); }
+
+  /* Flow bar */
+  .flow-bar { display: flex; height: 32px; border-radius: var(--radius); overflow: hidden; margin-bottom: 6px; }
+  .flow-seg {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 500;
+  }
+  .flow-labels { display: flex; font-size: 10px; color: var(--text3); }
+  .flow-label-seg { text-align: center; }
+
+  /* Cost table */
+  .cost-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 0;
+    border-bottom: 0.5px solid var(--border);
+    font-size: 14px;
+  }
+  .cost-row:last-child { border-bottom: none; }
+  .cost-name { flex: 1; color: var(--text); }
+  .cost-amount { font-weight: 500; text-align: right; min-width: 100px; color: var(--text); }
+  .cost-total { border-top: 0.5px solid var(--border2); margin-top: 4px; padding-top: 10px; font-weight: 500; }
+
+  .tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    margin-left: 5px; vertical-align: middle;
+  }
+  .tag-info { background: var(--info-bg); color: var(--info-text); }
+  .tag-warn { background: var(--warn-bg); color: var(--warn-text); }
+  .tag-gray { background: var(--bg3); color: var(--text2); border: 0.5px solid var(--border2); }
+
+  /* Sliders */
+  .slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-label { font-size: 13px; color: var(--text2); min-width: 120px; }
+  .slider-val { font-size: 13px; font-weight: 500; color: var(--text); min-width: 72px; text-align: right; }
+  input[type=range] {
+    flex: 1; accent-color: var(--pos);
+    height: 4px; cursor: pointer;
+  }
+
+  /* Summary grid */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 400px) { .summary-grid { grid-template-columns: 1fr; } }
+
+  /* Chart legend */
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text2); margin-top: 10px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+
+  /* Alert */
+  .alert {
+    background: var(--warn-bg); border: 0.5px solid var(--warn-text);
+    border-radius: var(--radius); padding: 10px 14px;
+    font-size: 13px; color: var(--warn-text); margin-top: 1.25rem;
+  }
+
+  .note { font-size: 12px; color: var(--text3); margin-top: 8px; }
+
+  footer { text-align: center; font-size: 12px; color: var(--text3); margin-top: 3rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>株式分析ツール 予算・損益シミュレーター</h1>
+  <p class="subtitle">月額3,000円（税込3,300円）・Stripe 3.6%・米国株 $499×150円固定</p>
+
+  <!-- Per-user breakdown -->
+  <div class="sec">1ユーザーあたりの内訳</div>
+  <div class="card">
+    <div class="breakdown-grid">
+      <div class="metric">
+        <div class="metric-label">税込売上</div>
+        <div class="metric-value">3,300円</div>
+        <div class="metric-sub">本体3,000 + 税300</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">消費税</div>
+        <div class="metric-value neg">▲ 300円</div>
+        <div class="metric-sub">税務署へ納付</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Stripe手数料</div>
+        <div class="metric-value neg">▲ 119円</div>
+        <div class="metric-sub">3,300 × 3.6%</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">実質手取り</div>
+        <div class="metric-value pos">2,881円</div>
+        <div class="metric-sub">損益計算の単価</div>
+      </div>
+    </div>
+    <div class="flow-bar">
+      <div class="flow-seg" style="flex:3300;background:#9FE1CB;color:#04342C;">3,300円</div>
+      <div class="flow-seg" style="flex:300;background:#F0997B;color:#4A1B0C;">▲300</div>
+      <div class="flow-seg" style="flex:119;background:#F5C4B3;color:#4A1B0C;">▲119</div>
+      <div class="flow-seg" style="flex:2881;background:#5DCAA5;color:#04342C;">2,881円</div>
+    </div>
+    <div class="flow-labels">
+      <div class="flow-label-seg" style="flex:3300;">税込売上</div>
+      <div class="flow-label-seg" style="flex:300;">消費税</div>
+      <div class="flow-label-seg" style="flex:119;">Stripe</div>
+      <div class="flow-label-seg" style="flex:2881;">手取り</div>
+    </div>
+  </div>
+
+  <!-- Fixed costs -->
+  <div class="sec">月次固定費</div>
+  <div class="card">
+    <div class="cost-row">
+      <span class="cost-name">株価データ（15分遅延）<span class="tag tag-info">確定・最低値</span></span>
+      <span class="cost-amount">430,000円</span>
+    </div>
+    <div class="cost-row">
+      <span class="cost-name">J-Quants Pro（需給4種）<span class="tag tag-info">確定・最低値</span></span>
+      <span class="cost-amount">725,000円</span>
+    </div>
+    <div class="cost-row">
+      <span class="cost-name">米国株 Twelve Data<span class="tag tag-info">$499×150円</span></span>
+      <span class="cost-amount">74,850円</span>
+    </div>
+    <div class="cost-row">
+      <span class="cost-name">日証金データ<span class="tag tag-warn">問合せ中</span></span>
+      <span class="cost-amount" id="nisshokDisp">0円（問合せ中）</span>
+    </div>
+    <div class="cost-row">
+      <span class="cost-name">インフラ / サーバー<span class="tag tag-gray">推定</span></span>
+      <span class="cost-amount" id="infraDisp">30,000円</span>
+    </div>
+    <div class="cost-row cost-total">
+      <span class="cost-name">合計</span>
+      <span class="cost-amount" id="totalDisp">—</span>
+    </div>
+    <p class="note">※ 株価・J-Quants は最低契約額。実際はさらに高くなる可能性あり。</p>
+  </div>
+
+  <!-- Sliders -->
+  <div class="sec">調整</div>
+  <div class="card">
+    <div class="slider-row">
+      <span class="slider-label">インフラ費</span>
+      <input type="range" min="10000" max="100000" step="5000" value="30000" id="infraSl">
+      <span class="slider-val" id="infraVl">3.0万円</span>
+    </div>
+    <div class="slider-row">
+      <span class="slider-label">日証金（仮置き）</span>
+      <input type="range" min="0" max="300000" step="10000" value="0" id="nisshokSl">
+      <span class="slider-val" id="nisshokVl">未定 (0)</span>
+    </div>
+    <div class="slider-row">
+      <span class="slider-label">ユーザー数</span>
+      <input type="range" min="0" max="1000" step="10" value="200" id="userSl">
+      <span class="slider-val" id="userVl">200人</span>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="sec">損益サマリー</div>
+  <div class="summary-grid">
+    <div class="metric">
+      <div class="metric-label">損益分岐点</div>
+      <div class="metric-value" id="beVal">—</div>
+      <div class="metric-sub">月次黒字化ライン</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">損益分岐点の月次売上（税込）</div>
+      <div class="metric-value" id="beRevVal">—</div>
+      <div class="metric-sub">= 固定費とトントン</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">月次損益</div>
+      <div class="metric-value" id="pnlVal">—</div>
+      <div class="metric-sub" id="pnlSub">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">年次換算損益</div>
+      <div class="metric-value" id="annVal">—</div>
+      <div class="metric-sub" id="annSub">—</div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="sec">損益シミュレーション</div>
+  <div class="card">
+    <div style="position:relative;width:100%;height:280px;">
+      <canvas id="chart"></canvas>
+    </div>
+    <div class="legend">
+      <span><span class="legend-dot" style="background:#E24B4A;"></span>月次固定費</span>
+      <span><span class="legend-dot" style="background:#1D9E75;"></span>月次手取り収益</span>
+    </div>
+  </div>
+
+  <div class="alert" id="alertBox">⚠ 日証金コストは現在問い合わせ中です。確定後にスライダーで更新してください。</div>
+
+  <footer>株式分析ツール 予算シミュレーター — 数値はすべて概算・最低値ベース</footer>
+</div>
+
+<script>
+const NET = 2881;
+const BASE = 430000 + 725000 + 74850;
+
+let chart;
+
+function fmtM(n, sign) {
+  const s = sign && n > 0 ? '+' : '';
+  const a = Math.abs(n);
+  let str;
+  if (a >= 1000000) str = (a / 10000).toFixed(0) + '万円';
+  else if (a >= 10000) str = (a / 10000).toFixed(1) + '万円';
+  else str = a.toLocaleString() + '円';
+  return (n < 0 ? '-' : s) + str;
+}
+function fmtAx(n) {
+  return Math.abs(n) >= 10000 ? (n / 10000).toFixed(0) + '万' : n.toLocaleString();
+}
+
+function update() {
+  const infra = +document.getElementById('infraSl').value;
+  const niss = +document.getElementById('nisshokSl').value;
+  const users = +document.getElementById('userSl').value;
+  const total = BASE + infra + niss;
+  const be = Math.ceil(total / NET);
+  const rev = Math.round(users * NET);
+  const pnl = rev - total;
+
+  document.getElementById('infraVl').textContent = (infra / 10000).toFixed(1) + '万円';
+  document.getElementById('nisshokVl').textContent = niss === 0 ? '未定 (0)' : fmtM(niss);
+  document.getElementById('userVl').textContent = users + '人';
+  document.getElementById('infraDisp').textContent = infra.toLocaleString() + '円';
+  document.getElementById('nisshokDisp').textContent = niss === 0 ? '0円（問合せ中）' : fmtM(niss);
+  document.getElementById('totalDisp').textContent = fmtM(total);
+  document.getElementById('beVal').textContent = be.toLocaleString() + '人';
+  document.getElementById('beRevVal').textContent = fmtM(be * 3300);
+
+  const pe = document.getElementById('pnlVal');
+  pe.textContent = fmtM(pnl, true);
+  pe.className = 'metric-value ' + (pnl >= 0 ? 'pos' : 'neg');
+  document.getElementById('pnlSub').textContent = users + '人 × 2,881円 − ' + fmtM(total);
+
+  const ae = document.getElementById('annVal');
+  ae.textContent = fmtM(pnl * 12, true);
+  ae.className = 'metric-value ' + (pnl >= 0 ? 'pos' : 'neg');
+  const gap = be - users;
+  document.getElementById('annSub').textContent = gap > 0 ? '黒字まで残り ' + gap + '人' : '黒字化達成 ✓';
+
+  document.getElementById('alertBox').style.display = niss === 0 ? 'block' : 'none';
+
+  const maxU = Math.max(Math.ceil(be * 1.7 / 100) * 100, 600);
+  const step = Math.round(maxU / 8);
+  const labels = [], rd = [], fd = [];
+  for (let i = 0; i <= 8; i++) {
+    const u = step * i;
+    labels.push(u + '人');
+    rd.push(Math.round(u * NET));
+    fd.push(total);
+  }
+
+  if (!chart) {
+    chart = new Chart(document.getElementById('chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: '固定費', data: fd, borderColor: '#E24B4A', borderWidth: 2, pointRadius: 0, tension: 0, backgroundColor: 'transparent' },
+          { label: '収益', data: rd, borderColor: '#1D9E75', borderWidth: 2, pointRadius: 0, tension: 0, backgroundColor: 'rgba(29,158,117,0.08)', fill: true }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 11 }, color: '#888780', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }, grid: { color: 'rgba(136,135,128,0.12)' } },
+          y: { ticks: { font: { size: 11 }, color: '#888780', callback: v => fmtAx(v) + '円' }, grid: { color: 'rgba(136,135,128,0.12)' } }
+        }
+      }
+    });
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = fd;
+    chart.data.datasets[1].data = rd;
+    chart.update('none');
+  }
+}
+
+['infraSl', 'nisshokSl', 'userSl'].forEach(id =>
+  document.getElementById(id).addEventListener('input', update)
+);
+update();
+</script>
+</body>
+</html>
